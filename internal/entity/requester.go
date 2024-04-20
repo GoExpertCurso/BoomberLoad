@@ -79,12 +79,11 @@ func NewWorker(url string, requests, numberConcurrent int) *Work {
 func (w *Work) Worker() {
 	client := http.Client{}
 	for j := 0; j < w.Requests/w.NumberConcurrent; j++ {
-		fmt.Println("Thread: ", j)
 		select {
 		case <-w.Done:
 			return
 		default:
-			req, err := http.NewRequest("Post", w.Url, nil)
+			req, err := http.NewRequest(http.MethodGet, w.Url, nil)
 			if err != nil {
 				fmt.Printf("Error creating request: %v", err)
 				continue
@@ -95,7 +94,6 @@ func (w *Work) Worker() {
 				fmt.Printf("Error making request: %v", err)
 				continue
 			}
-			//fmt.Println(res.Body)
 			res.Body.Close()
 			w.ResultChan <- true
 		}
