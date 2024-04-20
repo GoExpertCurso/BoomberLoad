@@ -13,8 +13,8 @@ import (
 
 var (
 	url           = flag.String("url", "", "")
-	requests      = flag.Int("r", 50, "")
-	numberThreads = flag.Int("c", 2, "")
+	requests      = flag.Int("requests", 50, "")
+	numberThreads = flag.Int("concurrency", 2, "")
 )
 
 var usage = `Usage: boomerLoad -url=http://example.com [options]
