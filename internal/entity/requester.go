@@ -57,10 +57,9 @@ type Work struct {
 	CompletedRequests int
 }
 
-func NewRequestDetails(code int, time float64) *RequestDetails {
+func NewRequestDetails(code int) *RequestDetails {
 	return &RequestDetails{
 		Code: code,
-		Time: time,
 	}
 }
 
@@ -77,7 +76,9 @@ func NewWorker(url string, requests, numberConcurrent int) *Work {
 }
 
 func (w *Work) Worker() {
-	client := http.Client{}
+	client := &http.Client{
+		CheckRedirect: redirectHandler,
+	}
 	for j := 0; j < w.Requests/w.NumberConcurrent; j++ {
 		select {
 		case <-w.Done:
@@ -89,12 +90,16 @@ func (w *Work) Worker() {
 				continue
 			}
 			res, err := client.Do(req)
-			w.HttpDetails <- NewRequestDetails(res.StatusCode, 1.0)
+
+			w.HttpDetails <- NewRequestDetails(res.StatusCode)
 			if err != nil {
 				fmt.Printf("Error making request: %v", err)
 				continue
 			}
 			res.Body.Close()
+			if res.StatusCode >= 300 && res.StatusCode < 400 {
+				continue
+			}
 			w.ResultChan <- true
 		}
 	}
@@ -102,4 +107,11 @@ func (w *Work) Worker() {
 
 func (w *Work) Close() {
 	close(w.Done)
+}
+
+func redirectHandler(req *http.Request, via []*http.Request) error {
+	for _, r := range via {
+		fmt.Println("Redirected to:", r.URL)
+	}
+	return nil
 }

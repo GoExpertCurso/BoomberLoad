@@ -20,8 +20,8 @@ var (
 var usage = `Usage: boomerLoad -url=http://example.com [options]
 
 	Options:
-	-r Number of requests to run. Default is 100.
-	-c Number of requests to run concurrently. Total number of requests cannot be smaller than the concurrency level. Default is 1.
+	-requests Number of requests to run. Default is 100.
+	-concurrency Number of requests to run concurrently. Total number of requests cannot be smaller than the concurrency level. Default is 1.
 `
 
 func main() {
