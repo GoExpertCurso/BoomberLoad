@@ -87,7 +87,7 @@ func main() {
 
 	durationSeconds := time.Since(start).Seconds()
 	requestsPerSecond := float64(work.CompletedRequests) / durationSeconds
-
+	fmt.Println()
 	fmt.Printf("Load test completed in %f seconds\n", durationSeconds)
 	fmt.Printf("Total requests: %d\n", work.CompletedRequests)
 	fmt.Printf("Requests per second: %2.4f\n", requestsPerSecond)

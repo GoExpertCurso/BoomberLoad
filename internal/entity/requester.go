@@ -2,6 +2,7 @@ package entity
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 )
 
@@ -77,7 +78,7 @@ func NewWorker(url string, requests, numberConcurrent int) *Work {
 
 func (w *Work) Worker() {
 	client := &http.Client{
-		CheckRedirect: redirectHandler,
+		//CheckRedirect: w.redirectHandler,
 	}
 	for j := 0; j < w.Requests/w.NumberConcurrent; j++ {
 		select {
@@ -86,21 +87,36 @@ func (w *Work) Worker() {
 		default:
 			req, err := http.NewRequest(http.MethodGet, w.Url, nil)
 			if err != nil {
-				fmt.Printf("Error creating request: %v", err)
+				log.Printf("Error creating request: %v", err)
 				continue
 			}
-			res, err := client.Do(req)
 
+			res, _ := client.Do(req)
 			w.HttpDetails <- NewRequestDetails(res.StatusCode)
-			if err != nil {
-				fmt.Printf("Error making request: %v", err)
-				continue
+			if res.StatusCode >= 300 && res.StatusCode <= 399 {
+				log.Printf("Redirected to:", res.Header.Get("Location"))
+				redirectURL := res.Header.Get("Location")
+				if redirectURL == "" {
+					log.Printf("Error: Redirect location not found")
+					continue
+				}
+				req.URL, err = req.URL.Parse(redirectURL)
+				if err != nil {
+					fmt.Printf("Error parsing redirect URL: %v", err)
+					continue
+				}
+				// Make request again to redirected URL
+				res, err = client.Do(req)
+				if err != nil {
+					log.Printf("Error making redirect request: %v", err)
+					continue
+				}
+				w.HttpDetails <- &RequestDetails{Code: res.StatusCode}
+				res.Body.Close()
 			}
 			res.Body.Close()
-			if res.StatusCode >= 300 && res.StatusCode < 400 {
-				continue
-			}
 			w.ResultChan <- true
+			log.Println("Request completed")
 		}
 	}
 }
@@ -109,9 +125,9 @@ func (w *Work) Close() {
 	close(w.Done)
 }
 
-func redirectHandler(req *http.Request, via []*http.Request) error {
+/* func redirectHandler(req *http.Request, via []*http.Request) error {
 	for _, r := range via {
 		fmt.Println("Redirected to:", r.URL)
 	}
 	return nil
-}
+} */
