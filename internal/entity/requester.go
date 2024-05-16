@@ -94,7 +94,7 @@ func (w *Work) Worker() {
 			res, _ := client.Do(req)
 			w.HttpDetails <- NewRequestDetails(res.StatusCode)
 			if res.StatusCode >= 300 && res.StatusCode <= 399 {
-				log.Printf("Redirected to:", res.Header.Get("Location"))
+				log.Println("Redirected to:", res.Header.Get("Location"))
 				redirectURL := res.Header.Get("Location")
 				if redirectURL == "" {
 					log.Printf("Error: Redirect location not found")
