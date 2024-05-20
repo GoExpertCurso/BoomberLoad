@@ -1,9 +1,12 @@
 package entity
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
+	"time"
 )
 
 type ResponseCounter struct {
@@ -29,7 +32,6 @@ func (rc *ResponseCounter) PrintStatusCodes() {
 
 type RequestDetails struct {
 	Code int
-	Time float64
 }
 
 type Work struct {
@@ -56,6 +58,9 @@ type Work struct {
 
 	//Total number of requests completed
 	CompletedRequests int
+
+	//To ensure channels are closed only once
+	once sync.Once
 }
 
 func NewRequestDetails(code int) *RequestDetails {
@@ -77,55 +82,89 @@ func NewWorker(url string, requests, numberConcurrent int) *Work {
 }
 
 func (w *Work) Worker() {
-	client := &http.Client{
-		//CheckRedirect: w.redirectHandler,
-	}
-	for j := 0; j < w.Requests/w.NumberConcurrent; j++ {
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, w.NumberConcurrent)
+
+	for j := 0; j < w.Requests; j++ {
 		select {
 		case <-w.Done:
+			wg.Wait()
+			w.once.Do(func() {
+				close(w.HttpDetails)
+				close(w.ResultChan)
+			})
 			return
-		default:
-			req, err := http.NewRequest(http.MethodGet, w.Url, nil)
-			if err != nil {
-				log.Printf("Error creating request: %v", err)
-				continue
-			}
+		case sem <- struct{}{}:
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer func() {
+					<-sem
+				}()
 
-			res, _ := client.Do(req)
-			w.HttpDetails <- NewRequestDetails(res.StatusCode)
-			if res.StatusCode >= 300 && res.StatusCode <= 399 {
-				log.Println("Redirected to:", res.Header.Get("Location"))
-				redirectURL := res.Header.Get("Location")
-				if redirectURL == "" {
-					log.Printf("Error: Redirect location not found")
-					continue
-				}
-				req.URL, err = req.URL.Parse(redirectURL)
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, w.Url, nil)
 				if err != nil {
-					fmt.Printf("Error parsing redirect URL: %v", err)
-					continue
+					log.Printf("Error creating request: %v", err)
+					return
 				}
-				// Make request again to redirected URL
-				res, err = client.Do(req)
+
+				client := &http.Client{
+					//CheckRedirect: w.redirectHandler,
+				}
+				res, err := client.Do(req)
 				if err != nil {
-					log.Printf("Error making redirect request: %v", err)
-					continue
+					log.Printf("Error making request: %v", err)
 				}
-				w.HttpDetails <- &RequestDetails{Code: res.StatusCode}
-				res.Body.Close()
-			}
-			res.Body.Close()
-			w.ResultChan <- true
-			log.Println("Request completed")
+
+				if res != nil {
+					defer res.Body.Close()
+
+					w.HttpDetails <- &RequestDetails{Code: res.StatusCode}
+
+					for res.StatusCode >= 300 && res.StatusCode <= 399 {
+						redirectURL := res.Header.Get("Location")
+						if redirectURL == "" {
+							log.Printf("Error: Redirect location not found")
+							continue
+						}
+						log.Println("Redirected to:", res.Header.Get("Location"))
+
+						req.URL, err = req.URL.Parse(redirectURL)
+						if err != nil {
+							log.Printf("Error parsing redirect URL: %v", err)
+							continue
+						}
+
+						// Make request again to redirected URL
+						res, err = client.Do(req)
+						if err != nil {
+							log.Printf("Error making redirect request: %v", err.Error())
+							continue
+						}
+						w.HttpDetails <- &RequestDetails{Code: res.StatusCode}
+						defer res.Body.Close()
+					}
+				}
+				w.ResultChan <- true
+				log.Println("Request completed")
+			}()
 		}
 	}
+	wg.Wait()
+	w.once.Do(func() {
+		close(w.HttpDetails)
+		close(w.ResultChan)
+	})
 }
 
 func (w *Work) Close() {
 	close(w.Done)
 }
 
-/* func redirectHandler(req *http.Request, via []*http.Request) error {
+/* func (w *Work) redirectHandler(req *http.Request, via []*http.Request) error {
 	for _, r := range via {
 		fmt.Println("Redirected to:", r.URL)
 	}

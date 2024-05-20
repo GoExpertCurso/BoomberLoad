@@ -3,9 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/GoExpertCurso/BoomerLoad/internal/entity"
@@ -66,16 +68,29 @@ func main() {
 	work.ResultChan = make(chan bool, num)
 	start := time.Now()
 	fmt.Printf("Starting load test for %s with %d concurrent requests for %d requests\n", url, conc, num)
-	for i := 0; i < conc; i++ {
-		go work.Worker()
-	}
+	//for i := 0; i < conc; i++ {
+	go work.Worker()
+	//}
 	lista := []entity.RequestDetails{}
 
-	for j := 0; j < num; j++ {
-		<-work.ResultChan
-		work.CompletedRequests++
-		lista = append(lista, *<-work.HttpDetails)
-	}
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for j := 0; j < num; j++ {
+			<-work.ResultChan
+			work.CompletedRequests++
+			details := <-work.HttpDetails
+			if details != nil {
+				lista = append(lista, *details)
+			} else {
+				log.Println("Received nil details")
+			}
+		}
+	}()
+
+	wg.Wait()
 
 	counter := entity.NewResponseCounter()
 
